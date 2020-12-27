@@ -1,6 +1,8 @@
-import * as request from 'superagent'
+import * as request from './getContent'
 import { parseDocument } from 'htmlparser2'
-import { Document, Element } from 'domhandler'
+import { Element, Node } from 'domhandler'
+
+type Store = [string[], string[]]
 
 const getAssetName = (str: string) => {
     const splitStr = str.split('/')
@@ -9,24 +11,21 @@ const getAssetName = (str: string) => {
 
 const traverseChildren = (
     elements: Element[],
-    store: [string[], string[]],
+    store: Store,
     url: string,
-    count: number,
-    cb: () => void
+    depth: number
 ) => {
+    console.log('depth', depth)
+    let tempChildArr: Node[] = []
+
     for (const el of elements) {
-        count++
         const { name, attribs, children } = el
         let src, href
         if (attribs) {
             ({ src, href } = attribs)
         }
 
-        if (
-            name === 'a' &&
-            href &&
-            href.includes('http')
-        ) {
+        if (name === 'a' && href && href.includes('http')) {
             store[0].push(href)
         }
 
@@ -35,44 +34,35 @@ const traverseChildren = (
             if (href) store[1].push(getAssetName(href))
         }
 
-        if (children) {
-            traverseChildren(<Element[]>children, store, url, count, cb)
-            // this should be 1 once all the children have been successfully traversed
-            if (count === 1) cb()
-        } else {
-            count--
+        if (children && children.length) {
+            tempChildArr = [...children]
         }
     }
+
+    depth++
+    if (tempChildArr.length) traverseChildren(<Element[]>tempChildArr, store, url, depth)
 }
 
-const cb = () => {
-    console.log('finished')
-}
+const getPageBody = async (url: string): Promise<Store> => {
+    const store: Store = [[], []]
 
-const extractData = (
-    doc: Document,
-    store: [string[], string[]],
-    url: string
-) => {
+    let res
+    try {
+        res = await request.get(url)
+    } catch (err) {
+        console.log('err', err)
+    }
+
+    if (!res) throw new Error('failed to fetch url')
+
+    const pageBody = res.text
+    const doc = parseDocument(pageBody)
     const children = doc.childNodes
-    const count = 0
-    traverseChildren(<Element[]>children, store, url, count, cb)
+    const depth = 0
+    traverseChildren(<Element[]>children, store, url, depth)
+    console.log('store - links:', store[0])
+    console.log('store - assets', store[1])
+    return store
 }
 
-const getPageBody = (url: string): void => {
-    const store: [string[], string[]] = [[], []]
-    request
-        .get(url)
-        .then((res) => {
-            const pageBody = res.text
-            const doc = parseDocument(pageBody)
-            extractData(doc, store, url)
-            console.log('store - links:', store[0])
-            console.log('store - assets', store[1])
-        })
-        .catch((err) => {
-            console.log('err', err)
-        })
-}
-
-export default getPageBody('https://bbc.co.uk')
+export { getPageBody }
