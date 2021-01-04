@@ -1,23 +1,29 @@
 import * as request from './getContent'
 import { parseDocument } from 'htmlparser2'
-import { Element, Node } from 'domhandler'
+import { Element } from 'domhandler'
+import { URL } from 'url'
 
 type Store = [string[], string[]]
+
+interface Map {
+    [index: string]: { links: string[], assets: string[] }
+}
 
 const getAssetName = (str: string) => {
     const splitStr = str.split('/')
     return splitStr[splitStr.length - 1]
 }
 
-const traverseChildren = (
+const traverseChildren = async (
     elements: Element[],
     store: Store,
     url: string,
-    depth: number
+    hostname: string,
+    count: number,
+    map: Map
 ) => {
-    console.log('depth', depth)
-    let tempChildArr: Node[] = []
-
+    count++
+    console.log('traversing child nodes...')
     for (const el of elements) {
         const { name, attribs, children } = el
         let src, href
@@ -26,6 +32,10 @@ const traverseChildren = (
         }
 
         if (name === 'a' && href && href.includes('http')) {
+            console.log('Found link...', href)
+        }
+
+        if (name === 'a' && href && href.includes('http') && href.includes(hostname)) {
             store[0].push(href)
         }
 
@@ -35,15 +45,24 @@ const traverseChildren = (
         }
 
         if (children && children.length) {
-            tempChildArr = [...children]
+            await traverseChildren(<Element[]>children, store, url, hostname, count, map)
         }
     }
 
-    depth++
-    if (tempChildArr.length) traverseChildren(<Element[]>tempChildArr, store, url, depth)
+    count--
+    if (count === 0) {
+        map[url] = { links: store[0], assets: store[1] }
+        if (store[0].length) {
+            for (const link of store[0]) {
+                const url = new URL(link)
+                if (!map[link] && url.hostname === hostname) await getPageBody(link, hostname, map)
+            }
+        }
+    }
 }
 
-const getPageBody = async (url: string): Promise<Store> => {
+const getPageBody = async (url: string, hostname: string, map: Map): Promise<void> => {
+    console.log('getting page body for...', url)
     const store: Store = [[], []]
 
     let res
@@ -53,16 +72,25 @@ const getPageBody = async (url: string): Promise<Store> => {
         console.log('err', err)
     }
 
-    if (!res) throw new Error('failed to fetch url')
-
-    const pageBody = res.text
-    const doc = parseDocument(pageBody)
-    const children = doc.childNodes
-    const depth = 0
-    traverseChildren(<Element[]>children, store, url, depth)
-    console.log('store - links:', store[0])
-    console.log('store - assets', store[1])
-    return store
+    if (res) {
+        const pageBody = res.text
+        const doc = parseDocument(pageBody)
+        const children = doc.childNodes
+        const count = 0
+        await traverseChildren(<Element[]>children, store, url, hostname, count, map)
+    }
 }
 
-export { getPageBody }
+const getSiteMap = async (): Promise<Map> => {
+    const map: Map = {}
+    const urlStr = 'https://cuvva.insure'
+    const url = new URL(urlStr)
+    const { hostname } = url
+
+    await getPageBody(urlStr, hostname, map)
+    console.log('site traversal complete!')
+    console.log('results\n', map)
+    return map
+}
+
+getSiteMap()

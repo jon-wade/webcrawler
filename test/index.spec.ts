@@ -1,9 +1,9 @@
-import { expect } from 'chai'
+// import { expect } from 'chai'
 import { createSandbox, SinonStub } from 'sinon'
 const sandbox = createSandbox()
 
 import * as request from "../getContent"
-import { getPageBody } from "../index"
+import * as getSiteMap from "../index"
 
 describe('unit index.ts', function () {
     this.timeout(10000)
@@ -21,11 +21,17 @@ describe('unit index.ts', function () {
     })
 
     it('should...', async function () {
-        getStub.resolves({
-            text: '<html><head></head><body><div class="one"></div></body></html>'
+        getStub.onFirstCall().resolves({
+            text: '<html><head><div></div><div></div></head><body><div><a href="http://www.hurricanecommerce.com/something" /></div></body></html>'
         })
-        const res = await getPageBody('https://www.hurricanecommerce.com')
-        expect(res).to.not.be.undefined
-        console.log('res', res)
+        getStub.onSecondCall().resolves({
+            text: '<html><body><div><script src="../jjj.js" /><a href="http://test2.com" /></div></body></html>'
+        })
+        getStub.onThirdCall().resolves({
+            text: '<html><body><div></div></body></html>'
+        })
+        const res = await getSiteMap
+        // expect(res).to.not.be.undefined
+        console.log('res from test', res)
     })
 })
